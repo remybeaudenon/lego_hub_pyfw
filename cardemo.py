@@ -1,8 +1,42 @@
+"""
+    DECANUM - Robot Inventor MicroPython Software -
+    Project    : Framework for LEGO Robot Inventor MSHub
+    Application: Tools
+    Auth        : remybeaudenon@yahoo.com
+    Date        : 06/2023
+"""
 from mindstorms.control import wait_for_seconds,Timer
 from mindstorms import MSHub, Motor, MotorPair, DistanceSensor,ColorSensor
 from micropython import const
+import math,sys,urandom,time
 
-import math,sys,urandom
+class LegoFw : 
+    __VERSION__ ='1.0.1-2606'
+
+class Log():
+    @staticmethod
+    def trace(data) :
+
+        if not TRACE :
+            return
+
+        data_string =''
+        if (type(data) == str ) :
+            data_string = data
+        elif (type(data) == list or type(data) == dict ) :
+            data_string = ' ' + repr(data)
+        elif (type(data) == int or type(data) == float ):
+            data_string = ' ' + '{} value:{}'.format(type(data),data)
+        else :
+            data_string = 'Log:_writedata can\'t be converted.. {}'.format(type(data))
+        header_record = ''
+        lt= time.localtime()
+        nowDay= '{:03d}'.format(lt[7])
+        nowTime = '{:02d}:{:02d}:{:02d}'.format(lt[3],lt[4],lt[5])
+
+        header_record = '{}\t{}'.format( nowDay,nowTime)
+        line = header_record + data_string
+        print(line)
 
 class Speaker() :
 
@@ -32,7 +66,7 @@ class Speaker() :
 
     def play_sound(name = 'Bing') :
 
-        if name in Speaker.BRUITAGES or name in Speaker.VOIX  :
+        if name in Speaker.BRUITAGES or name in Speaker.VOIX:
             hub.speaker.play_sound(name)
         else :
             hub.speaker.play_sound('Void')
@@ -57,7 +91,7 @@ class Speaker() :
         if select < 8 :
             index = urandom.randint(0,len(Speaker.VOIX) -1 )
             hub.speaker.play_sound(Speaker.VOIX[index])
-        else : 
+        else :
             index = urandom.randint(0,len(Speaker.BRUITAGES) -1 )
             hub.speaker.play_sound(Speaker.BRUITAGES[index])
 
@@ -139,7 +173,7 @@ class MatrixLight() :
         hub.light_matrix.off()
 
     @staticmethod
-    def off_menu() : 
+    def off_menu() :
         for y in [0,2,4]:
             for x in range(1,4):
                 hub.light_matrix.set_pixel(x,y,0)
@@ -188,8 +222,8 @@ class Radar(DistanceSensor) :
         self.light_up_all(0)
 
     def spot_random(self,min,max) :
-        angle  = urandom.randint(min,max)
-        if angle < 0 : angle = 360 + angle 
+        angle= urandom.randint(min,max)
+        if angle < 0 : angle = 360 + angle
         self.spot(angle)
 
     def scan(self):
@@ -207,14 +241,14 @@ class Radar(DistanceSensor) :
         self.motor.run_to_position(0,direction="shortest path",speed=20)
         self.activated = False
 
-    def show_distance(self,distance=0): 
+    def show_distance(self,distance=0):
         MatrixLight.off_menu()
-        if distance <= 4 : 
-            y_idx = 0  
-        else: 
-            y_idx   = int (distance/4) 
-            if y_idx > 4 :  y_idx = 4 
-        
+        if distance <= 4 :
+            y_idx = 0
+        else:
+            y_idx= int (distance/4)
+            if y_idx > 4 :y_idx = 4
+
         for y in range(0,5):
             hub.light_matrix.set_pixel(2,y,60)
         hub.light_matrix.set_pixel(2,y_idx,100)
@@ -233,55 +267,82 @@ class Radar(DistanceSensor) :
                 return (angle,distance)
         return(None,None)
 
-class Car(MotorPair):
+class Coder(Motor) :
 
-    AVANT   = const(1)
+    def __init__(self, motor_port) :
+        super().__init__(motor_port)
+        self.motor_port = motor_port
+        self.init = self.start = self.diff = 0
+        self.position = self.get_degrees_counted()
+        #self.run_to_position(0, 'shortest path', 30)
+
+    def get_position(self) : # Incremented en sens Horaire, Decremente anti horaire
+        try :
+            self.position = self.get_degrees_counted()
+            return self.position
+        except RuntimeError as re : 
+            Log.trace("Coder.get_position() Error:{}".format(re) )
+
+    def start_position(self) : # Incremented en sens Horaire, Decremente anti horaire
+        self.start = self.get_position()
+        return self.start
+
+    def get_diff_position(self) : # Incremented en sens Horaire, Decremente anti horaire
+        self.position = self.get_position()
+        self.diff= self.start - self.position
+        return self.diff
+
+class Manette(Coder):
+
+    POURCENT_MINI= const(-100)
+    POURCENT_MAXI= const(100)
+    RESOLUTION    = const(1)        # [1 to 5 ]1 reactive --> 5 souple
+    SENS            = const(-1)     # [-1,+1]
+    POINTS        = ( POURCENT_MAXI - POURCENT_MINI) * RESOLUTION
+    STEP            = 10            # Ouput increment Step
+
+    def __init__(self, motor_port) :
+        super().__init__(motor_port)
+        self.value = 0
+        self.start_position()
+
+    def get_value(self):
+        diff_degrees = self.get_diff_position()
+        self.start_position()
+
+        points = int( diff_degrees / Manette.RESOLUTION ) * Manette.SENS
+        points = int(points/Manette.STEP) * Manette.STEP
+        points += self.value
+        self.value  = min(Manette.POURCENT_MAXI, max(Manette.POURCENT_MINI, points))
+        Log.trace("Manette.get_value() :{}".format(self.value))
+
+
+class Car(MotorPair,Coder):
+
+    AVANT= const(1)
     ARRIERE = const(-1)
 
-    PERIMETRE_ROUE = const(17.5) # cm
+    PERIMETRE_ROUE = const(175) # mm
 
-    class Coder :
+    def __init__(self, motors_port) :
+        MotorPair.__init__(self,motors_port[0],motors_port[1]) 
+        Coder.__init__(self,motors_port[1])
 
-        GAUCHE  = const(0)
-        DROIT   = const(1)
 
-        def __init__(self, motorG, motorD) :
-            self.motorG = Motor(motorG)
-            self.motorD = Motor(motorD)
-            self.init = self.start = self.get_positions()
+    def move_cm(self, cm , sens):
+        self.move_tank(cm * sens  , "cm", 25, 25)
 
-        def get_positions(self) : # Incremented en sens Horaire, Decremente anti horaire
-            wait_for_seconds(0.25)
-            return (self.motorG.get_degrees_counted(), self.motorD.get_degrees_counted() )
-
-        def start_positions(self) : # Incremented en sens Horaire, Decremente anti horaire
-            self.start = self.get_positions()
-            return self.start
-
-        def get_diff_positions(self) : # Incremented en sens Horaire, Decremente anti horaire
-            self.positions = self.get_positions()
-            self.diff= (abs(self.start[self.GAUCHE] - self.positions[self.GAUCHE] ) ,\
-                        abs(self.start[self.DROIT] - self.positions[self.DROIT] ) )
-            return self.diff
-
-    def __init__(self, motorG, motorD) :
-        super().__init__(motorG,motorD)
-        self.coder = Car.Coder(motorG,motorD)
-
-    def move_tank_cm(self, cm , sens):
-        self.move_tank(self, round( cm * 360 / Car.PERIMETRE_ROUE ) , sens )
-
-    def move_tank(self, offset , sens):
+    def rotate_to_cap(self, offset , sens):
 
         if sens < 0 :
             sens = -1
         else :sens = 1
 
         cap = hub.motion_sensor.get_yaw_angle()
-        self.coder.start_positions()
+        self.start_positions()
 
-        if TRACE : print("Car:drive() START| cap:{} | pos.start:{} --> offset: {}".format \
-                        (cap, self.coder.start[Car.Coder.DROIT] ,offset))
+        Log.trace("Car:drive() START| cap:{} | pos.start:{} --> offset: {}".format \
+                        (cap, self.start ,offset))
 
         power0 = 27 # Mini
 
@@ -291,8 +352,6 @@ class Car(MotorPair):
         cont = True
 
         #accelerations =[ power0 , power0 + 10 , power0 + 15 , power0 + 30 , power0+50 ]
-
-
         while cont :
 
             # P Reguration CAP
@@ -303,28 +362,28 @@ class Car(MotorPair):
             control_cap = kp_cap * error
 
             # P Reguration vitesse
-            eccart =self.coder.get_diff_positions()[Car.Coder.DROIT]
+            eccart =self.get_diff_positions()
             error = abs(offset) - eccart
             control_vit = int(kp_vit * (error/100 ) )
             if power0 + control_vit > 75 : control_vit = 75 - power0# Maxi 75%
 
             leftpower= int( (power0 * sens) + (control_vit * sens ) ) #+control_cap)
             rightpower= int( (power0 * sens) + (control_vit * sens) )#-control_cap)
-            cont =abs(offset) - self.coder.get_diff_positions()[Car.Coder.DROIT] > 4
-            if TRACE : print(" error: {} leftpower: {}rightpower:{} ".format(error, leftpower,rightpower) )
+            cont =abs(offset) - self.get_diff_positions() > 4
+            Log.trace(" error: {} leftpower: {}rightpower:{} ".format(error, leftpower,rightpower) )
 
             self.start_tank_at_power(leftpower,rightpower)
         self.stop()
 
-        if TRACE : print("Car:drive() STOP| cap:{} | pos.start: {} +offset:{} = {} ".format \
-                        (hub.motion_sensor.get_yaw_angle(), self.coder.start[Car.Coder.DROIT] , \
-                        offset, self.coder.get_positions()[Car.Coder.DROIT] ))
+        Log.trace("Car:drive() STOP| cap:{} | pos.start: {} +offset:{} = {} ".format \
+                    (hub.motion_sensor.get_yaw_angle(), self.start , \
+                    offset, self.get_positions() ))
 
 
     # Rotates the car on its place so that its yaw() becomes `target` (using P-control).
     def rotate(self,target):
         ntarget = (180+target) % 360 - 180 # normalize target to be in -180..+180 range
-        if TRACE : print("Car:rotate() target=", target,"(", hub.motion_sensor.get_yaw_angle()," --> ",ntarget,")")
+        Log.trace("Car:rotate() target=", target,"(", hub.motion_sensor.get_yaw_angle()," --> ",ntarget,")")
         kp = 0.1
         power0 = 20
         cont = True
@@ -338,34 +397,34 @@ class Car(MotorPair):
             cont = math.fabs(error) > 4
             self.start_tank_at_power(power,-power)
         self.stop()
-        return self.coder.get_positions()
+        return self.get_positions()
 
 class TimerCtrl(Timer) :
 
     def __init__(self) :
         super()
         self.start_time = 0
-        self.stop_time  = 0 
+        self.stop_time= 0
         self.activated = False
 
-    def start(self): 
+    def start(self):
         self.start_time = self.now()
-        self.activated  = True
+        self.activated= True
 
-    def lap(self): 
+    def lap(self):
         if self.activated :
             return self.now() - self.start()
-        else : 
-            return 0 
+        else :
+            return 0
 
-    def stop(self): 
+    def stop(self):
         self.stop = self.now()
-        self.activated = False 
+        self.activated = False
 
     def wait_y(self,sec):
         while self.now() < sec :
             yield
- 
+
 class ColorSensorCtrl(ColorSensor) :
 
     def __init__(self, port) :
@@ -373,7 +432,7 @@ class ColorSensorCtrl(ColorSensor) :
         #self.light_up_all(10) si utilisé plus de detection de couleur
         self.light_up(0, 0, 0)
         self.previous_color = None
-        self.activated = False 
+        self.activated = False
 
     def scan_check(self) :
         self.light_up(100, 100, 100)
@@ -389,56 +448,56 @@ class ColorSensorCtrl(ColorSensor) :
     def off(self):
         StatusLight.off()
         self.light_up(0, 0, 0)
-        
+
 class BoutonsCtrl():
     def __init__(self) :
-        self.left   = hub.left_button.was_pressed() 
-        self.right  = hub.right_button.was_pressed() 
-        self.activated = False 
+        self.left= hub.left_button.was_pressed()
+        self.right= hub.right_button.was_pressed()
+        self.activated = False
 
-    def checks(self) :         
+    def checks(self) :
         self.left = hub.left_button.was_pressed()
         self.right = hub.right_button.was_pressed()
         return (self.left,self.right)
 
-class MenuCtrl() : 
+class MenuCtrl() :
 
-    A = const(65) #Ascii code 
+    A = const(65) #Ascii code
     B = const(66) #Ascii code
-    C = const(67) #Ascii code 
-    D = const(68) #Ascii code  
-    E = const(69) #Ascii code 
-    F = const(70) #Ascii code  
-    X = const(88) #Ascii code 'No choice'    
+    C = const(67) #Ascii code
+    D = const(68) #Ascii code
+    E = const(69) #Ascii code
+    F = const(70) #Ascii code
+    X = const(88) #Ascii code 'Edit Mode'
 
-    DOT_LIST = {'A':(0,0),'B':(4,0),'C':(0,2),'D':(4,2),'E':(0,4),'F':(4,4)}
+    DISPLAY_DOT_LIST = {'A':(0,0),'B':(4,0),'C':(0,2),'D':(4,2),'E':(0,4),'F':(4,4)}
     CHECK_LIST = {'A':False,'B':False,'C':False,'D':False,'E':False,'F':False}
 
     def __init__(self) :
-        self.left   = hub.left_button.was_pressed() 
-        self.right  = hub.right_button.was_pressed() 
-        
-        self.menu_item =  MenuCtrl.X
-        self.menu_item_selected =  MenuCtrl.A 
+        self.left= hub.left_button.was_pressed()
+        self.right= hub.right_button.was_pressed()
+
+        self.menu_item =MenuCtrl.X
+        self.menu_item_selected =MenuCtrl.A
         self.timer = Timer()
 
         self.item_list = []
-        self.activated = True 
+        self.activated = True
 
-    def update_y(self) :         
+    def update_y(self) :
 
         self.left = hub.left_button.was_pressed()
         self.right = hub.right_button.was_pressed()
 
-        # --- Buttons action -- 
-        if self.left : 
+        # --- Buttons action --
+        if self.left :
             if self.menu_item != MenuCtrl.X :
                 self.menu_item = MenuCtrl.X
-            else:    
+            else:
                 self.menu_item_selected += 1
-                if self.menu_item_selected  > MenuCtrl.F : self.menu_item_selected = MenuCtrl.A 
+                if self.menu_item_selected> MenuCtrl.F : self.menu_item_selected = MenuCtrl.A
 
-        if self.right : 
+        if self.right :
             if self.menu_item == self.menu_item_selected :
                 check = MenuCtrl.CHECK_LIST.get(chr(self.menu_item))
                 MenuCtrl.CHECK_LIST[chr(self.menu_item)] = not check
@@ -446,54 +505,55 @@ class MenuCtrl() :
                 self.menu_item = self.menu_item_selected
 
         # -- Matrix update ---
-        for item in MenuCtrl.DOT_LIST.keys() : 
-            dot = MenuCtrl.DOT_LIST.get(item)
+        for item in MenuCtrl.DISPLAY_DOT_LIST.keys() :
+            dot = MenuCtrl.DISPLAY_DOT_LIST.get(item)
             check = MenuCtrl.CHECK_LIST.get(item)
 
             if ord(item) == self.menu_item_selected :
-                if self.menu_item == MenuCtrl.X : # mode edition 
+                if self.menu_item == MenuCtrl.X : # mode edition
                     if (self.timer.now() % 2 == 0 ) :
-                        if check : 
+                        if check :
                             hub.light_matrix.set_pixel(dot[0], dot[1], 100)
-                        else : 
+                        else :
                             hub.light_matrix.set_pixel(dot[0], dot[1], 65)
                     else :
                         hub.light_matrix.set_pixel(dot[0], dot[1], 0)
-                else : 
-                    if check : 
+                else :
+                    if check :
                         hub.light_matrix.set_pixel(dot[0], dot[1], 100)
-                    else : 
+                    else :
                         hub.light_matrix.set_pixel(dot[0], dot[1], 80)
             elif check :
                 hub.light_matrix.set_pixel(dot[0], dot[1], 100)
             else :
                 hub.light_matrix.set_pixel(dot[0], dot[1], 0)
 
-        # --- Update Selection active item list 
-        self.item_list = [] 
-        for item in MenuCtrl.CHECK_LIST : 
+        # --- Update Selection active item list
+        self.item_list = []
+        for item in MenuCtrl.CHECK_LIST :
             check = MenuCtrl.CHECK_LIST.get(item)
-            if check: 
+            if check:
                 self.item_list.append(item)
         self.item_list.append(chr(self.menu_item))
-           
-    def getAllSelection(self) : 
+
+    def getAllSelection(self) :
         return self.item_list
-    
+
     def getMenuItem(self) :
-        return chr(self.menu_item) 
-    
+        return chr(self.menu_item)
+
     def isMenuItem(self,menu_item):
-        return menu_item in self.item_list 
+        return menu_item in self.item_list
 
 # ---------------------------------------------
-# ---------- Process  loop --------------------
-#
+# ---------- Process Tasks loop ---------------
+# ---------------------------------------------
+
 class ProcessCtrl():
 
     @staticmethod
     def speaker(item_menu) :
-        timer       = TimerCtrl()
+        timer    = TimerCtrl()
         while True:
             while menuCtrl.isMenuItem(item_menu):
                 Speaker.play_random()
@@ -504,55 +564,55 @@ class ProcessCtrl():
     @staticmethod
     def statusLight(item_menu) :
         light_button = StatusLight()
-        timer       = TimerCtrl()
+        timer        = TimerCtrl()
         while True:
             while menuCtrl.isMenuItem(item_menu):
                 light_button.activated = True
                 light_button.show_random()
                 timer.reset()
                 yield from timer.wait_y(3)
-            if light_button.activated : 
+            if light_button.activated :
                 light_button.off()
                 light_button.activated = False
             yield
 
     @staticmethod
     def matrixLight(item_menu) :
-        matrix  = MatrixLight()
-        timer   = TimerCtrl()
+        matrix= MatrixLight()
+        timer= TimerCtrl()
         while True:
             while menuCtrl.isMenuItem(item_menu):
                 matrix.activated = True
                 matrix.show_img_random()
                 timer.reset()
                 yield from timer.wait_y(2)
-            if matrix.activated : 
+            if matrix.activated :
                 matrix.off_menu()
                 matrix.activated = False
             yield
 
     @staticmethod
     def radar(item_menu) :
-        radar   = Radar(RADAR_SENSOR_PORT)
-        timer   = TimerCtrl()
-        func_radar_scan = radar.scan_y() 
+        radar= Radar(RADAR_SENSOR_PORT)
+        timer= TimerCtrl()
+        func_radar_scan = radar.scan_y()
         while True:
             while menuCtrl.isMenuItem(item_menu):
                 radar.activated = True
                 try :
                     next(func_radar_scan)
                 except StopIteration:
-                    func_radar_scan = radar.scan_y()        
+                    func_radar_scan = radar.scan_y()
                 timer.reset()
                 yield from timer.wait_y(5)
-            if radar.activated: 
+            if radar.activated:
                 radar.deactivate()
             yield
 
     @staticmethod
     def color_scanner(item_menu):
-        sensor  = ColorSensorCtrl(COLOR_SENSOR_PORT)
-        timer   = TimerCtrl()
+        sensor= ColorSensorCtrl(COLOR_SENSOR_PORT)
+        timer= TimerCtrl()
         while True:
             while menuCtrl.isMenuItem(item_menu):
                 sensor.activated = True
@@ -566,37 +626,40 @@ class ProcessCtrl():
 
     @staticmethod
     def menu_control():
-        while True : 
-            yield menuCtrl.update_y() 
+        while True :
+            yield menuCtrl.update_y()
 
-# Create the cooperative tasks instance with Menu Item 
-func_matrix         = ProcessCtrl.matrixLight('A')
-func_light_button   = ProcessCtrl.statusLight('B')
-func_color_scanner  = ProcessCtrl.color_scanner('C')
-func_radar          = ProcessCtrl.radar('D')
+# Create the cooperative tasks instance with linked menu Item
+func_matrix        = ProcessCtrl.matrixLight('A')
+func_light_button= ProcessCtrl.statusLight('B')
+func_color_scanner= ProcessCtrl.color_scanner('C')
+func_radar        = ProcessCtrl.radar('D')
 func_speaker        = ProcessCtrl.speaker('E')
 
-func_menu_ihm       = ProcessCtrl.menu_control()
+func_menu_ihm    = ProcessCtrl.menu_control()
 
 # ----Main Program----
-TRACE = False
-if TRACE : print('Main:Thread() Welcome to Discovery Hub os:{} car version:{}'.format(sys.platform ,sys.version))
 
+TRACE = True # Enable or desable flag
+Log.trace('Main:Thread() Welcome to Discovery Hub os:{} car version:{} fw:{}'. \
+               format(sys.platform ,sys.version,LegoFw.__VERSION__))
 
-# -- Port des capteurs ---
+# -- Sensors port---
+PAIR_MOTORS_PORT    = ('A','B')
+RADAR_MOTOR_PORT    = 'C'
+COLOR_SENSOR_PORT   = 'E'
+RADAR_SENSOR_PORT   = 'F'
+CODER_MOTOR_PORT    = 'D'
 
-PAIR_MOTOR_PORTS   =('A','B')
-RADAR_MOTOR_PORT   ='C'  
-COLOR_SENSOR_PORT  ='E'
-RADAR_SENSOR_PORT  ='F'
-
+# -- global instance ---
 hub    = MSHub()
-Speaker.beep3()
-
-# -- global instance 
 menuCtrl = MenuCtrl()
 
-#--- Loop
+#car = Car(PAIR_MOTORS_PORT)
+
+#--- Loop ---
+Speaker.beep3()
+
 while True :
 
     next(func_menu_ihm)
@@ -607,15 +670,4 @@ while True :
 
     next(func_radar)
     next(func_speaker)
-
-    #car     = Car("A","B")
-    # car.coder.start_positions()
-    #pos = car.rotate(target)
-    #diff = car.coder.get_diff_positions()
-    #print("yaw car {} --> position G {} D {}".format(target, diff[0],diff[1]))
-    #car.move_tank_cm(20.0,Car.AVANT)
-    #if TRACE : wait_for_seconds(2)
-    #car.move_tank_cm(20.0,Car.ARRIERE)
-    #if TRACE : print('item menu: {}'.format(menu_item))
-    #if TRACE : wait_for_seconds(1)
-
+#--- Loop ---
