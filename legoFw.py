@@ -12,7 +12,7 @@ from micropython import const
 import math,sys,urandom,time
 
 class LegoFw : 
-    __VERSION__ ='1.0.2-0614'
+    __VERSION__ ='1.0.3-0618'
 
 class Log():
 
@@ -338,8 +338,8 @@ class Manette(Coder):
 
 class ManetteDrive(Coder) : 
 
-    POURCENT_MINI   = const(-50)
-    POURCENT_MAXI   = const(50)
+    POURCENT_MIN= const(-50)
+    POURCENT_MAX= const(50)
 
     def __init__(self) :
         super().__init__(MANETTE_MOTOR_PORT)
@@ -348,7 +348,7 @@ class ManetteDrive(Coder) :
         #self.run_to_position(0, 'shortest path', 30)
  
     def scale(self,value) : 
-        return min(ManetteDrive.POURCENT_MAXI, max(ManetteDrive.POURCENT_MINI, value))
+        return min(ManetteDrive.POURCENT_MAX, max(ManetteDrive.POURCENT_MIN, value))
 
     def update_y(self) :
         yield self.getValue()
@@ -361,7 +361,6 @@ class ManetteDrive(Coder) :
         if type(value) == int :
             self.value = self.scale(value)
             self.run_to_position(self.value, 'shortest path', 30)
-
 
 class Car(MotorPair,Coder):
 
