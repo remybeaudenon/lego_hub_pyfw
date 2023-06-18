@@ -12,11 +12,9 @@ from micropython import const
 import math,sys,urandom,time
 
 class LegoFw : 
-    __VERSION__ ='1.0.1-0613'
+    __VERSION__ ='1.0.2-0614'
 
 class Log():
-
-
 
     @staticmethod
     def trace(data) :
@@ -38,7 +36,7 @@ class Log():
         nowDay= '{:03d}'.format(lt[7])
         nowTime = '{:02d}:{:02d}:{:02d}'.format(lt[3],lt[4],lt[5])
 
-        header_record = '{}\t{}'.format( nowDay,nowTime)
+        header_record = '{}|{} > '.format( nowDay,nowTime)
         line = header_record + data_string
         print(line)
 
@@ -139,7 +137,10 @@ class MatrixLight() :
                 'MUSIC_CROTCHET','MUSIC_QUAVERS','NO','PACMAN','PITCHFORK','RABBIT','ROLLERSKATE','SAD','SILLY','SKULL', \
                 'SMILE','SNAKE','SQUARE','SQUARE_SMALL','STICKFIGURE','SURPRISED','SWORD','TARGET','TORTOISE','TRIANGLE',\
                 'TRIANGLE_LEFT','TSHIRT','UMBRELLA','XMAS','YES' ]
-
+    
+    FONT_NUMBER = ['99999:99999','90090:99999','99909:90999','90909:99999','00990:99999','90999:99909',\
+                   '99999:99909','99909:00099','99099:99099','90999:99999' ] 
+    
     def __init__(self) :
         self.activated = False
 
@@ -154,6 +155,14 @@ class MatrixLight() :
             for x in range(5):
                 if bits & cur : hub.light_matrix.set_pixel(x,y,100)
                 cur >>= 1
+
+    @staticmethod
+    def show_number(number):
+        if type(number) == int and number >=0 and number < 100 : 
+            dizaine  = MatrixLight.FONT_NUMBER[int(number/10)] + ':00000:'
+            unité    = MatrixLight.FONT_NUMBER[(number % 10)]  
+            hub.light_matrix.show(dizaine+unité)
+
 
     @staticmethod
     def on(picture):
@@ -311,7 +320,7 @@ class Manette(Coder):
         self.start_position()
 
     def setValue(self,value):
-        if  type(value) == int :
+        if type(value) == int : 
             self.value = self.scale(value)
 
     def getValue(self):
@@ -326,6 +335,32 @@ class Manette(Coder):
 
     def scale(self,value) : 
         return min(Manette.POURCENT_MAXI, max(Manette.POURCENT_MINI, value))
+
+class ManetteDrive(Coder) : 
+
+    POURCENT_MINI   = const(-50)
+    POURCENT_MAXI   = const(50)
+
+    def __init__(self) :
+        super().__init__(MANETTE_MOTOR_PORT)
+        self.value = 0
+        self.start_position()
+        #self.run_to_position(0, 'shortest path', 30)
+ 
+    def scale(self,value) : 
+        return min(ManetteDrive.POURCENT_MAXI, max(ManetteDrive.POURCENT_MINI, value))
+
+    def update_y(self) :
+        yield self.getValue()
+
+    def getValue(self):
+        self.value = self.scale(self.get_position())
+        return self.value
+
+    def setValue(self,value):
+        if type(value) == int :
+            self.value = self.scale(value)
+            self.run_to_position(self.value, 'shortest path', 30)
 
 
 class Car(MotorPair,Coder):
@@ -419,12 +454,13 @@ class TimerCtrl(Timer) :
         self.activated = False
 
     def start(self):
+        self.reset()
         self.start_time = self.now()
         self.activated= True
 
     def lap(self):
         if self.activated :
-            return self.now() - self.start()
+            return self.now() - self.start_time
         else :
             return 0
 
@@ -480,32 +516,37 @@ class Bouton() :
     def isOn(self) :
         return self.etat
 
-
 class BoutonOptique(Bouton,ColorSensorCtrl) : 
 
     RED= 'red'
 
-    def __init__(self) :
+    def __init__(self,sound = False) :
         Bouton.__init__(self) 
         ColorSensorCtrl.__init__(self,COLOR_SENSOR_PORT)
         StatusLight.on('green')  
-        self.sound = False  
+        self.sound = sound
 
     def update_y(self) : 
         color_value = self.get_color()
 
         if color_value != self.previous_color :
             if color_value == BoutonOptique.RED :
-                self.etat = not self.etat
-                if self.etat :
-                    StatusLight.on('pink')
-                    if self.sound : Speaker.play_sound("Power Up")
+                if not self.etat :
+                    self.on()
                 else :
-                    StatusLight.on('green')    
-                    if self.sound : Speaker.play_sound("Power Down")
+                    self.off()
 
             self.previous_color = color_value
+    
+    def off(self) : 
+        self.etat = False
+        StatusLight.on('green')    
+        if self.sound : Speaker.play_sound("Power Down")
 
+    def on(self) : 
+        self.etat = True
+        StatusLight.on('pink')    
+        if self.sound : Speaker.play_sound("Power Up")
 
 class MenuCtrl() :
 
@@ -609,9 +650,6 @@ class ProcessCtrl():
             yield
 # Create the cooperative tasks instance with linked menu Item
 func_dummy          = ProcessCtrl.dummy()
-func_bouton_optique = ProcessCtrl.bouton_optique()
-func_run            = ProcessCtrl.run()
-
 
 # ----Main Program----
 TRACE = True # Enable or desable flag

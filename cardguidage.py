@@ -137,7 +137,10 @@ class MatrixLight() :
                 'MUSIC_CROTCHET','MUSIC_QUAVERS','NO','PACMAN','PITCHFORK','RABBIT','ROLLERSKATE','SAD','SILLY','SKULL', \
                 'SMILE','SNAKE','SQUARE','SQUARE_SMALL','STICKFIGURE','SURPRISED','SWORD','TARGET','TORTOISE','TRIANGLE',\
                 'TRIANGLE_LEFT','TSHIRT','UMBRELLA','XMAS','YES' ]
-
+    
+    FONT_NUMBER = ['99999:99999','90090:99999','99909:90999','90909:99999','00990:99999','90999:99909',\
+                   '99999:99909','99909:00099','99099:99099','90999:99999' ] 
+    
     def __init__(self) :
         self.activated = False
 
@@ -152,6 +155,14 @@ class MatrixLight() :
             for x in range(5):
                 if bits & cur : hub.light_matrix.set_pixel(x,y,100)
                 cur >>= 1
+
+    @staticmethod
+    def show_number(number):
+        if type(number) == int and number >=0 and number < 100 : 
+            dizaine  = MatrixLight.FONT_NUMBER[int(number/10)] + ':00000:'
+            unité    = MatrixLight.FONT_NUMBER[(number % 10)]  
+            hub.light_matrix.show(dizaine+unité)
+
 
     @staticmethod
     def on(picture):
@@ -215,6 +226,7 @@ class Coder(Motor) :
         self.motor_port = motor_port
         self.init = self.start = self.diff = 0
         self.position = self.get_degrees_counted()
+        
         #self.run_to_position(0, 'shortest path', 30)
 
     def get_position(self) : # Incremented en sens Horaire, Decremente anti horaire
@@ -223,7 +235,8 @@ class Coder(Motor) :
             return self.position
         except RuntimeError as re : 
             Log.trace("Coder.get_position() Error:{}".format(re) )
-
+        return self.position
+    
     def start_position(self) : # Incremented en sens Horaire, Decremente anti horaire
         self.start = self.get_position()
         return self.start
@@ -233,36 +246,33 @@ class Coder(Motor) :
         self.diff= self.start - self.position
         return self.diff
 
-class Manette(Coder):
+class ManetteDrive(Coder) : 
 
-    POURCENT_MINI= const(-50)
-    POURCENT_MAXI= const(50)
-    RESOLUTION    = const(1)        # [1 to 5 ]1 reactive --> 5 souple
-    SENS            = const(-1)     # [-1,+1]
-    POINTS        = ( POURCENT_MAXI - POURCENT_MINI) * RESOLUTION
-    STEP            = 5            # Ouput increment Step
+    POURCENT_MINI   = const(-50)
+    POURCENT_MAXI   = const(50)
 
     def __init__(self) :
         super().__init__(MANETTE_MOTOR_PORT)
         self.value = 0
         self.start_position()
+        #self.run_to_position(0, 'shortest path', 30)
+ 
+    def scale(self,value) : 
+        return min(ManetteDrive.POURCENT_MAXI, max(ManetteDrive.POURCENT_MINI, value))
+
+    def update_y(self) :
+        yield self.getValue()
+
+    def getValue(self):
+        self.value = self.scale(self.get_position())
+        return self.value
 
     def setValue(self,value):
         if type(value) == int :
             self.value = self.scale(value)
+            self.run_to_position(self.value, 'shortest path', 30)
 
-    def getValue(self):
-        diff_degrees = self.get_diff_position()
-        self.start_position()
 
-        points = int( diff_degrees / Manette.RESOLUTION ) * Manette.SENS
-        points = int(points/Manette.STEP) * Manette.STEP
-        points += self.value
-        self.value  = self.scale(points)
-        return self.value
-
-    def scale(self,value) : 
-        return min(Manette.POURCENT_MAXI, max(Manette.POURCENT_MINI, value))
 
 
 class Car(MotorPair,Coder):
@@ -352,12 +362,12 @@ class TimerCtrl(Timer) :
     def __init__(self) :
         super()
         self.start_time = 0
-        self.stop_time= 0
-        self.activated = False
+        self.stop_time  = 0
+        self.activated  = False
 
     def start(self):
         self.start_time = self.now()
-        self.activated= True
+        self.activated  = True
 
     def lap(self):
         if self.activated :
@@ -366,8 +376,8 @@ class TimerCtrl(Timer) :
             return 0
 
     def stop(self):
-        self.stop = self.now()
-        self.activated = False
+        self.stop       = self.now()
+        self.activated  = False
 
     def wait_y(self,sec):
         while self.now() < sec :
@@ -392,7 +402,6 @@ class Bouton() :
     def isOn(self) :
         return self.etat
 
-
 class BoutonOptique(Bouton,ColorSensorCtrl) : 
 
     RED= 'red'
@@ -408,15 +417,24 @@ class BoutonOptique(Bouton,ColorSensorCtrl) :
 
         if color_value != self.previous_color :
             if color_value == BoutonOptique.RED :
-                self.etat = not self.etat
-                if self.etat :
-                    StatusLight.on('pink')
-                    if self.sound : Speaker.play_sound("Power Up")
+                if not self.etat :
+                    self.on()
                 else :
-                    StatusLight.on('green')    
-                    if self.sound : Speaker.play_sound("Power Down")
+                    self.off()
 
             self.previous_color = color_value
+    
+    def off(self) : 
+        self.etat = False
+        StatusLight.on('green')    
+        if self.sound : Speaker.play_sound("Power Down")
+
+    def on(self) : 
+        self.etat = True
+        StatusLight.on('pink')    
+        if self.sound : Speaker.play_sound("Power Up")
+
+
 
 class ColorSensorCtrl(ColorSensor) :
 
@@ -465,32 +483,51 @@ class ProcessCtrl():
             yield bo.update_y()
 
     @staticmethod
+    def manette_drive() :
+        while True:
+            yield manette.update_y()
+
+
+    @staticmethod
     def run() :
         car =Car()
+        timer = TimerCtrl()
 
         car.set_stop_action('hold')
         car_puissance  = 35
         car.set_default_speed(car_puissance)
-        volant_previous = None 
+        volant_previous = None
+        timer_previous  = 0
+        MatrixLight.show_number(timer_previous)  
 
         while True:
-            while bo.isOn():
+            while bo.isOn() and timer_previous < 30 :
                 volant = manette.getValue()
-                if volant_previous == None : manette.setValue(0)
+                if volant_previous == None : 
+                    manette.setValue(0)
+                    timer.start()
+
                 if volant_previous != volant : 
                     car.start_at_power(car_puissance, volant)
                     volant_previous = volant
-                    print("direction :{}".format(volant))
+                if timer_previous != timer.now() : 
+                    timer_previous = timer.now()
+                    MatrixLight.show_number(timer_previous)
+                    #print("direction: {}   timer: {}".format(volant,timer_previous))
                 yield
+
             if volant_previous != None :
                 car.stop()
-                volant_previous = None 
+                bo.off()
+                volant_previous = None
+                timer_previous  = 0  
             yield
 
 # Create the cooperative tasks instance with linked menu Item
 func_dummy          = ProcessCtrl.dummy()
 func_bouton_optique = ProcessCtrl.bouton_optique()
 func_run            = ProcessCtrl.run()
+func_manette_drive  =ProcessCtrl.manette_drive()
 
 # ----Main Program----
 TRACE = True # Enable or desable flag
@@ -509,12 +546,13 @@ hub    = MSHub()
 Speaker.beep3()
 
 bo = BoutonOptique()
-manette = Manette()
+manette = ManetteDrive()
 
 #--- Loop ---
 while True :
     next(func_bouton_optique)
     next(func_run)
+    next(func_manette_drive)
 
 
 #--- Loop ---
