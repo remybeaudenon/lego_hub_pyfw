@@ -1,18 +1,17 @@
-
 """
     DECANUM - Robot Inventor MicroPython Software -
     Project    : Framework for LEGO Robot Inventor MSHub
-    Application: Tools
+    Application: slot15_baselib.py
     Auth        : remybeaudenon@yahoo.com
     Date        : 06/2023
 """
 from mindstorms.control import wait_for_seconds,Timer
 from mindstorms import MSHub, Motor, MotorPair, DistanceSensor,ColorSensor
 from micropython import const
-import math,sys,urandom,time
+import math,sys,urandom,time,gc
 
-class LegoFw : 
-    __VERSION__ ='1.0.3-0618'
+class LegoFw :
+    __VERSION__ ='1.0.3-0822'
 
 class Log():
 
@@ -72,6 +71,9 @@ class Speaker() :
             hub.speaker.play_sound(name)
         else :
             hub.speaker.play_sound('Void')
+    def exit() : 
+        hub.speaker.play_sound('Mission Accomplished')
+        raise Exception("Exit") 
 
     @staticmethod
     def play_all():
@@ -137,10 +139,10 @@ class MatrixLight() :
                 'MUSIC_CROTCHET','MUSIC_QUAVERS','NO','PACMAN','PITCHFORK','RABBIT','ROLLERSKATE','SAD','SILLY','SKULL', \
                 'SMILE','SNAKE','SQUARE','SQUARE_SMALL','STICKFIGURE','SURPRISED','SWORD','TARGET','TORTOISE','TRIANGLE',\
                 'TRIANGLE_LEFT','TSHIRT','UMBRELLA','XMAS','YES' ]
-    
+
     FONT_NUMBER = ['99999:99999','90090:99999','99909:90999','90909:99999','00990:99999','90999:99909',\
-                   '99999:99909','99909:00099','99099:99099','90999:99999' ] 
-    
+                '99999:99909','99909:00099','99099:99099','90999:99999' ]
+
     def __init__(self) :
         self.activated = False
 
@@ -158,9 +160,9 @@ class MatrixLight() :
 
     @staticmethod
     def show_number(number):
-        if type(number) == int and number >=0 and number < 100 : 
-            dizaine  = MatrixLight.FONT_NUMBER[int(number/10)] + ':00000:'
-            unité    = MatrixLight.FONT_NUMBER[(number % 10)]  
+        if type(number) == int and number >=0 and number < 100 :
+            dizaine= MatrixLight.FONT_NUMBER[int(number/10)] + ':00000:'
+            unité    = MatrixLight.FONT_NUMBER[(number % 10)]
             hub.light_matrix.show(dizaine+unité)
 
 
@@ -293,7 +295,7 @@ class Coder(Motor) :
         try :
             self.position = self.get_degrees_counted()
             return self.position
-        except RuntimeError as re : 
+        except RuntimeError as re :
             Log.trace("Coder.get_position() Error:{}".format(re) )
 
     def start_position(self) : # Incremented en sens Horaire, Decremente anti horaire
@@ -310,7 +312,7 @@ class Manette(Coder):
     POURCENT_MINI= const(-50)
     POURCENT_MAXI= const(50)
     RESOLUTION    = const(1)        # [1 to 5 ]1 reactive --> 5 souple
-    SENS            = const(-1)     # [-1,+1]
+    SENS            = const(-1)    # [-1,+1]
     POINTS        = ( POURCENT_MAXI - POURCENT_MINI) * RESOLUTION
     STEP            = 5            # Ouput increment Step
 
@@ -320,7 +322,7 @@ class Manette(Coder):
         self.start_position()
 
     def setValue(self,value):
-        if type(value) == int : 
+        if type(value) == int :
             self.value = self.scale(value)
 
     def getValue(self):
@@ -330,13 +332,13 @@ class Manette(Coder):
         points = int( diff_degrees / Manette.RESOLUTION ) * Manette.SENS
         points = int(points/Manette.STEP) * Manette.STEP
         points += self.value
-        self.value  = self.scale(points)
+        self.value= self.scale(points)
         return self.value
 
-    def scale(self,value) : 
+    def scale(self,value) :
         return min(Manette.POURCENT_MAXI, max(Manette.POURCENT_MINI, value))
 
-class ManetteDrive(Coder) : 
+class ManetteDrive(Coder) :
 
     POURCENT_MIN= const(-50)
     POURCENT_MAX= const(50)
@@ -346,8 +348,8 @@ class ManetteDrive(Coder) :
         self.value = 0
         self.start_position()
         #self.run_to_position(0, 'shortest path', 30)
- 
-    def scale(self,value) : 
+
+    def scale(self,value) :
         return min(ManetteDrive.POURCENT_MAX, max(ManetteDrive.POURCENT_MIN, value))
 
     def update_y(self) :
@@ -362,7 +364,115 @@ class ManetteDrive(Coder) :
             self.value = self.scale(value)
             self.run_to_position(self.value, 'shortest path', 30)
 
-class Car(MotorPair,Coder):
+
+class PID:
+    """PID Controller
+    """
+    def __init__(self, P=0.2, I=0.0, D=0.0, current_time=None):
+
+        self.Kp = P
+        self.Ki = I
+        self.Kd = D
+
+        self.sample_time = 0.00
+        self.current_time = current_time if current_time is not None else time.time()
+        self.last_time = self.current_time
+
+        self.clear()
+
+    def clear(self):
+        """Clears PID computations and coefficients"""
+        self.SetPoint = 0.0
+
+        self.PTerm = 0.0
+        self.ITerm = 0.0
+        self.DTerm = 0.0
+        self.last_error = 0.0
+
+        # Windup Guard
+        self.int_error = 0.0
+        self.windup_guard = 20.0
+
+        self.output = 0.0
+
+    def update(self, feedback_value, current_time=None):
+        """Calculates PID value for given reference feedback
+
+        .. math::
+            u(t) = K_p e(t) + K_i \int_{0}^{t} e(t)dt + K_d {de}/{dt}
+
+        .. figure:: images/pid_1.png
+           :align:   center
+
+           Test PID with Kp=1.2, Ki=1, Kd=0.001 (test_pid.py)
+
+        """
+        error = self.SetPoint - feedback_value
+        
+        ####  Ticky add 
+        if feedback_value == 0 :
+            error = 0 
+        elif  feedback_value > self.SetPoint :
+            error = 10 
+        else:      
+            error = - 10
+        ################################"
+        # "
+        self.current_time = current_time if current_time is not None else time.time()
+        delta_time = self.current_time - self.last_time
+        delta_error = error - self.last_error
+
+        if (delta_time >= self.sample_time):
+            self.PTerm = self.Kp * error
+            self.ITerm += error * delta_time
+
+            if (self.ITerm < -self.windup_guard):
+                self.ITerm = -self.windup_guard
+            elif (self.ITerm > self.windup_guard):
+                self.ITerm = self.windup_guard
+
+            self.DTerm = 0.0
+            if delta_time > 0:
+                self.DTerm = delta_error / delta_time
+
+            # Remember last time and last error for next calculation
+            self.last_time = self.current_time
+            self.last_error = error
+
+            self.output = self.PTerm + (self.Ki * self.ITerm) + (self.Kd * self.DTerm)
+
+    def setKp(self, proportional_gain):
+        """Determines how aggressively the PID reacts to the current error with setting Proportional Gain"""
+        self.Kp = proportional_gain
+
+    def setKi(self, integral_gain):
+        """Determines how aggressively the PID reacts to the current error with setting Integral Gain"""
+        self.Ki = integral_gain
+
+    def setKd(self, derivative_gain):
+        """Determines how aggressively the PID reacts to the current error with setting Derivative Gain"""
+        self.Kd = derivative_gain
+
+    def setWindup(self, windup):
+        """Integral windup, also known as integrator windup or reset windup,
+        refers to the situation in a PID feedback controller where
+        a large change in setpoint occurs (say a positive change)
+        and the integral terms accumulates a significant error
+        during the rise (windup), thus overshooting and continuing
+        to increase as this accumulated error is unwound
+        (offset by errors in the other direction).
+        The specific problem is the excess overshooting.
+        """
+        self.windup_guard = windup
+
+    def setSampleTime(self, sample_time):
+        """PID that should be updated at a regular interval.
+        Based on a pre-determined sampe time, the PID decides if it should compute or return immediately.
+        """
+        self.sample_time = sample_time
+
+
+class Car(MotorPair):
 
     AVANT= const(1)
     ARRIERE = const(-1)
@@ -370,12 +480,20 @@ class Car(MotorPair,Coder):
     PERIMETRE_ROUE = const(175) # mm
 
     def __init__(self) :
-        MotorPair.__init__(self,PAIR_MOTORS_PORT[0],PAIR_MOTORS_PORT[1]) 
-        Coder.__init__(self,PAIR_MOTORS_PORT[1])
+        MotorPair.__init__(self,PAIR_MOTORS_PORT[0],PAIR_MOTORS_PORT[1])
+        self.coder = Coder(PAIR_MOTORS_PORT[1])
 
+        self.set_default_speed(30)
+
+    def setSpeed(self,value):
+        if type(value) == int :
+            self.set_default_speed(self.scale(0,100,value))
+
+    def start_motors(self,volant):
+        self.start(self.scale(-100,100,volant),self.get_default_speed())
 
     def move_cm(self, cm , sens):
-        self.move_tank(cm * sens  , "cm", 25, 25)
+        self.move_tank(cm * sens, "cm", 25, 25)
 
     def rotate_to_cap(self, offset , sens):
 
@@ -384,10 +502,10 @@ class Car(MotorPair,Coder):
         else :sens = 1
 
         cap = hub.motion_sensor.get_yaw_angle()
-        self.start_positions()
+        self.coder.start_position()
 
         Log.trace("Car:drive() START| cap:{} | pos.start:{} --> offset: {}".format \
-                        (cap, self.start ,offset))
+                        (cap, self.coder.start ,offset))
 
         power0 = 27 # Mini
 
@@ -399,22 +517,22 @@ class Car(MotorPair,Coder):
         #accelerations =[ power0 , power0 + 10 , power0 + 15 , power0 + 30 , power0+50 ]
         while cont :
 
-            # P Reguration CAP
+            # P Regulation CAP
             yaw = hub.motion_sensor.get_yaw_angle()
             error = cap - yaw
             if error > +180: error = -(error - 180)
             if error < -180: error = -(error + 180)
             control_cap = kp_cap * error
 
-            # P Reguration vitesse
-            eccart =self.get_diff_positions()
+            # P Regulation vitesse
+            eccart =self.coder.get_diff_position()
             error = abs(offset) - eccart
             control_vit = int(kp_vit * (error/100 ) )
             if power0 + control_vit > 75 : control_vit = 75 - power0# Maxi 75%
 
             leftpower= int( (power0 * sens) + (control_vit * sens ) ) #+control_cap)
             rightpower= int( (power0 * sens) + (control_vit * sens) )#-control_cap)
-            cont =abs(offset) - self.get_diff_positions() > 4
+            cont =abs(offset) - self.coder.get_diff_position() > 4
             Log.trace(" error: {} leftpower: {}rightpower:{} ".format(error, leftpower,rightpower) )
 
             self.start_tank_at_power(leftpower,rightpower)
@@ -422,7 +540,7 @@ class Car(MotorPair,Coder):
 
         Log.trace("Car:drive() STOP| cap:{} | pos.start: {} +offset:{} = {} ".format \
                     (hub.motion_sensor.get_yaw_angle(), self.start , \
-                    offset, self.get_positions() ))
+                    offset, self.coder.get_position() ))
 
 
     # Rotates the car on its place so that its yaw() becomes `target` (using P-control).
@@ -442,7 +560,10 @@ class Car(MotorPair,Coder):
             cont = math.fabs(error) > 4
             self.start_tank_at_power(power,-power)
         self.stop()
-        return self.get_positions()
+
+    def scale(self,mini,maxi,value) :
+        return min(maxi , max(mini, value))
+
 
 class TimerCtrl(Timer) :
 
@@ -479,7 +600,7 @@ class ColorSensorCtrl(ColorSensor) :
         #self.light_up(0, 0, 0)
         self.previous_color = None
         self.activated = False
-        self.color  = None
+        self.color= None
 
     def scan_check(self) :
         self.light_up(100, 100, 100)
@@ -507,25 +628,24 @@ class BoutonsCtrl():
         self.right = hub.right_button.was_pressed()
         return (self.left,self.right)
 
-class Bouton() : 
+class Bouton() :
     def __init__(self) :
-        self.etat = False 
-        self.top  = False
+        self.etat = False
+        self.top= False
 
     def isOn(self) :
         return self.etat
 
-class BoutonOptique(Bouton,ColorSensorCtrl) : 
+class BoutonOptique(Bouton,ColorSensorCtrl) :
 
     RED= 'red'
 
     def __init__(self,sound = False) :
-        Bouton.__init__(self) 
+        Bouton.__init__(self)
         ColorSensorCtrl.__init__(self,COLOR_SENSOR_PORT)
-        StatusLight.on('green')  
         self.sound = sound
 
-    def update_y(self) : 
+    def update_y(self) :
         color_value = self.get_color()
 
         if color_value != self.previous_color :
@@ -536,15 +656,15 @@ class BoutonOptique(Bouton,ColorSensorCtrl) :
                     self.off()
 
             self.previous_color = color_value
-    
-    def off(self) : 
+
+    def off(self) :
         self.etat = False
-        StatusLight.on('green')    
+        StatusLight.on('green')
         if self.sound : Speaker.play_sound("Power Down")
 
-    def on(self) : 
+    def on(self) :
         self.etat = True
-        StatusLight.on('pink')    
+        StatusLight.on('pink')
         if self.sound : Speaker.play_sound("Power Up")
 
 class MenuCtrl() :
@@ -573,8 +693,9 @@ class MenuCtrl() :
 
     def update_y(self) :
 
-        self.left = hub.left_button.was_pressed()
-        self.right = hub.right_button.was_pressed()
+        self.left    = hub.left_button.was_pressed()
+        self.right    = hub.right_button.was_pressed()
+        self.right_r    = hub.right_button.is_released()
 
         # --- Buttons action --
         if self.left :
@@ -591,7 +712,9 @@ class MenuCtrl() :
             else :
                 self.menu_item = self.menu_item_selected
 
+
         # -- Matrix update ---
+
         for item in MenuCtrl.DISPLAY_DOT_LIST.keys() :
             dot = MenuCtrl.DISPLAY_DOT_LIST.get(item)
             check = MenuCtrl.CHECK_LIST.get(item)
@@ -632,46 +755,95 @@ class MenuCtrl() :
     def isMenuItem(self,menu_item):
         return menu_item in self.item_list
 
-# ---------------------------------------------
-# ---------- Process Tasks loop ---------------
-# ---------------------------------------------
 
-class ProcessCtrl():
+class Select() :
 
-    @staticmethod
-    def dummy() :
-        timer    = TimerCtrl()
-        while True:
-            while True:
-                Speaker.play_random()
-                timer.reset()
-                yield from timer.wait_y(30)
-            yield
-# Create the cooperative tasks instance with linked menu Item
-func_dummy          = ProcessCtrl.dummy()
+    PARAMS_SPEED = {'mini':25 ,'maxi':95 ,'increment':5 ,'init' : 50 ,'matrix_code':'55599:55995:99555:55995:55599'}
+    PARAMS_PROG_NUM = {'mini':1 ,'maxi':20 ,'increment':1 ,'init' : 0, 'matrix_code':'55555:99999:55959:55999:55555'}
+
+    def __init__(self, params) :
+        self.left    = hub.left_button.was_pressed()
+        self.right    = hub.right_button.was_pressed()
+        self.right_r    = hub.right_button.is_released()
+
+        self.value    = 0
+        self.timer    = Timer()
+        self.edit    = True
+        self.right_set= False
+        self.params    = params
+        self.value    = self.scale(self.params.get('init'))
+
+    def isEditMode(self):
+        return self.edit
+
+    def setEditMode(self,flag) :
+        if type(flag) == bool :
+            self.edit = flag
+
+    def waitValue(self):
+        while self.isEditMode() :
+            self.update()
+        return self.getValue()
+
+    def update(self):
+
+        if self.edit :
+            self.left    = hub.left_button.was_pressed()
+            self.right    = hub.right_button.was_pressed()
+            self.right_r    = hub.right_button.is_released()
+
+            # --- Buttons action --
+            increment = self.params.get('increment')
+            if self.left :
+                if self.value - increment >= self.params.get('mini') :
+                    self.value -= increment
+
+            if self.right and not self.right_set: # wait time for validation
+                self.timer.reset()
+                self.right_set = True
+
+            if self.right_set and self.right_r :
+                if self.value + increment <= self.params.get('maxi'):
+                    self.value += increment
+                self.right_set = False
+
+            # --- Matrix Light action --
+            if self.right_set and self.timer.now() > 2 : #2 secondes
+                self.edit = False
+                MatrixLight.show_number(self.value)
+                Speaker.beep()
+                MatrixLight.off()
+            else :
+                if (self.timer.now() % 2 == 0 ) :
+                    MatrixLight.show_number(self.value)
+                else:
+                    MatrixLight.show_pixels(self.params.get('matrix_code'))
+
+    def getValue(self):
+            return self.value
+
+    def scale(self,value) :
+        return min(self.params.get('maxi') , max(self.params.get('mini'), value))
 
 # ----Main Program----
 TRACE = True # Enable or desable flag
 Log.trace('Main:Thread() Welcome to Discovery Hub os:{} car version:{} fw:{}'. \
-               format(sys.platform ,sys.version,LegoFw.__VERSION__))
+            format(sys.platform ,sys.version,LegoFw.__VERSION__))
 
 # -- Sensors port---
 PAIR_MOTORS_PORT    = ('A','B')
 RADAR_MOTOR_PORT    = 'C'
-COLOR_SENSOR_PORT   = 'E'
-RADAR_SENSOR_PORT   = 'F'
-MANETTE_MOTOR_PORT  = 'D'
+COLOR_SENSOR_PORT= 'E'
+RADAR_SENSOR_PORT= 'F'
+MANETTE_MOTOR_PORT= 'D'
 
 # -- global instance ---
 hub    = MSHub()
+LIBRARY_SLOT = const(15) 
 
+
+# -- LIBRARY MAIN ---
 Speaker.beep3()
-#--- Loop ---
-
-while True :
-    next(func_dummy)
-
-#--- Loop ---
-
-
+print("library loaded into robot slot:{}".format(LIBRARY_SLOT))
+hub.speaker.play_sound('charging')
 

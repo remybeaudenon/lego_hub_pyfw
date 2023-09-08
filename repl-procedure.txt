@@ -1,0 +1,50 @@
+WINDOWS 
+-------
+
+==> Telnet 
+open Telnet with COMx 115200  find COMx ( gestionnaire de péripheriques  serie USB port (COMx) ) 
+CTRL+B 
+
+==> VSCode 
+Install VSCode + PyMakr   
+
+
+>>> help()
+Welcome to MicroPython!
+For online help please visit http://micropython.org/help/.
+
+Quick overview of commands for the board:
+  hub.info()    -- print some general information
+  hub.status()  -- print sensor data
+
+Control commands:
+  CTRL-A        -- on a blank line, enter raw REPL mode
+  CTRL-B        -- on a blank line, enter normal REPL mode
+  CTRL-C        -- interrupt a running program
+  CTRL-D        -- on a blank line, do a soft reset of the board
+  CTRL-E        -- on a blank line, enter paste mode
+  CTRL-F        -- on a blank line, enter filetransfer mode
+
+For further help on a specific object, type help(obj)
+For a list of available modules, type help('modules')
+
+
+
+RASPBERRY 
+----------
+>sudo pip3 install rshell
+You may need to provide the device to connect to such as:
+pi@PI4-SRV-2GB:~ $ rshell -l
+USB Serial Device 0694:0010 with vendor 'LEGO System A/S' serial '327D386C3338' found @/dev/ttyACM0 *
+
+>rshell -p /dev/ttyACM0
+To get a Python repl, you can either type repl at the shell on the device, or you can run rshell as:
+>rshell repl
+
+MicroPython v1.14-36-g377ea11 on 2022-11-01; LEGO Technic Large Hub with STM32F413xx
+Type "help()" for more information.
+>>>
+Quick overview of commands for the board:
+  hub.info()    -- print some general information
+  hub.status()  -- print sensor data
+
