@@ -1,6 +1,13 @@
-import hub
-import time
+"""
+    DECANUM - Robot Inventor MicroPython Software -
+    Project    : Framework for LEGO Robot Inventor MSHub
+                : Application Dummy sample
+    Application : slot06_usbcmd.py
+    Auth        : remybeaudenon@yahoo.com
+    Date        : 09/2023
+"""
 
+import hub,time
 # Connect to virtual com port over bluetooth
 vcp = hub.BT_VCP(0)
 # Show hint on the hub, console and host

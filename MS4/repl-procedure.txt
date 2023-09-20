@@ -1,7 +1,7 @@
 WINDOWS 
 -------
 
-==> Telnet 
+==> Telnet (COM5) 
 open Telnet with COMx 115200  find COMx ( gestionnaire de péripheriques  serie USB port (COMx) ) 
 CTRL+B 
 
@@ -47,4 +47,7 @@ Type "help()" for more information.
 Quick overview of commands for the board:
   hub.info()    -- print some general information
   hub.status()  -- print sensor data
+
+exec(open('loraCheck.py').read())
+
 

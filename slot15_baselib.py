@@ -11,7 +11,7 @@ from micropython import const
 import math,sys,urandom,time,gc
 
 class LegoFw :
-    __VERSION__ ='1.0.3-0822'
+    __VERSION__ ='1.0.3-0920'
 
 class Log():
 
@@ -412,7 +412,7 @@ class PID:
         ####  Ticky add 
         if feedback_value == 0 :
             error = 0 
-        elif  feedback_value > self.SetPoint :
+        elif feedback_value > self.setPoint :
             error = 10 
         else:      
             error = - 10
@@ -474,8 +474,8 @@ class PID:
 
 class Car(MotorPair):
 
-    AVANT= const(1)
-    ARRIERE = const(-1)
+    AVANT= DROIT  = const(1)
+    ARRIERE = GAUCHE =const(-1)
 
     PERIMETRE_ROUE = const(175) # mm
 
@@ -489,8 +489,8 @@ class Car(MotorPair):
         if type(value) == int :
             self.set_default_speed(self.scale(0,100,value))
 
-    def start_motors(self,volant):
-        self.start(self.scale(-100,100,volant),self.get_default_speed())
+    def start_motors(self,volant, speed = None):
+        self.start(self.scale(-100,100,volant), self.get_default_speed() if speed == None else speed)
 
     def move_cm(self, cm , sens):
         self.move_tank(cm * sens, "cm", 25, 25)
@@ -504,7 +504,7 @@ class Car(MotorPair):
         cap = hub.motion_sensor.get_yaw_angle()
         self.coder.start_position()
 
-        Log.trace("Car:drive() START| cap:{} | pos.start:{} --> offset: {}".format \
+        Log.trace("Car:rotate_to_cap() START| cap:{} | pos.start:{} --> offset: {}".format \
                         (cap, self.coder.start ,offset))
 
         power0 = 27 # Mini
@@ -533,37 +533,77 @@ class Car(MotorPair):
             leftpower= int( (power0 * sens) + (control_vit * sens ) ) #+control_cap)
             rightpower= int( (power0 * sens) + (control_vit * sens) )#-control_cap)
             cont =abs(offset) - self.coder.get_diff_position() > 4
-            Log.trace(" error: {} leftpower: {}rightpower:{} ".format(error, leftpower,rightpower) )
+            Log.trace("Car:rotate_to_cap() error: {} leftpower: {}rightpower:{} ".format(error, leftpower,rightpower) )
 
             self.start_tank_at_power(leftpower,rightpower)
         self.stop()
 
-        Log.trace("Car:drive() STOP| cap:{} | pos.start: {} +offset:{} = {} ".format \
+        Log.trace("Car:rotate_to_cap() STOP| cap:{} | pos.start: {} +offset:{} = {} ".format \
                     (hub.motion_sensor.get_yaw_angle(), self.start , \
                     offset, self.coder.get_position() ))
 
 
     # Rotates the car on its place so that its yaw() becomes `target` (using P-control).
-    def rotate(self,target):
+    def old_rotate(self,target):
         ntarget = (180+target) % 360 - 180 # normalize target to be in -180..+180 range
-        Log.trace("Car:rotate() target=", target,"(", hub.motion_sensor.get_yaw_angle()," --> ",ntarget,")")
+        Log.trace("Car:rotate() target= {} ntarget= {} ".format(target ,ntarget))
         kp = 0.1
-        power0 = 20
+        power0 = 35
         cont = True
         while cont:
             yaw = hub.motion_sensor.get_yaw_angle()
             error = ntarget - yaw
-            if error > +180: error = -(error - 180)
-            if error < -180: error = -(error + 180)
+            #if error > +180: error = -(error - 180)
+            #if error <= -180: error = -(error + 180)
             control = kp * error
             power = int(math.copysign(power0,control)+control)
-            cont = math.fabs(error) > 4
+            #print("error: {} control:{} power {} ".format(error , control,  power))
+            cont = math.fabs(error) > 2
             self.start_tank_at_power(power,-power)
+        self.set_stop_action('brake')
+        self.stop()
+    # Rotates the car on its place so that its yaw() becomes `target` (using P-control).
+
+    def rotate(self,target):
+        ntarget = (180+target) % 360 - 180 # normalize target to be in -180..+180 range
+        Log.trace("Car:rotate() target= {} ntarget= {} ".format(target ,ntarget))
+        power = 35
+        cont = True
+        self.start_tank_at_power(power,-power)
+        while cont:
+            error = ntarget - hub.motion_sensor.get_yaw_angle()
+            cont = math.fabs(error) > 2
+        #self.set_stop_action('brake')
         self.stop()
 
     def scale(self,mini,maxi,value) :
         return min(maxi , max(mini, value))
 
+
+class MotorAux(Coder) :
+
+    REVERSE = True
+
+    def __init__(self, motor_port , reverse = False ) :
+        super().__init__(motor_port)
+        self.motor_port = motor_port
+        self.reverse = reverse 
+        self.set_default_speed(20)
+
+    def init(self) :
+        self.run_to_position(0, 'shortest path')
+
+    def angle(self, angle) :
+
+        angle = self.scale(0,150,angle)
+        if self.reverse :
+             angle = 360 - angle 
+
+        self.run_to_position( angle , 'shortest path')
+
+    def scale(self,mini,maxi,value) :
+        return min(maxi , max(mini, value))
+    
 
 class TimerCtrl(Timer) :
 
@@ -572,10 +612,11 @@ class TimerCtrl(Timer) :
         self.start_time = 0
         self.stop_time= 0
         self.activated = False
+        self.save_time = 0
 
     def start(self):
         self.reset()
-        self.start_time = self.now()
+        self.start_time = self.save_time = self.now()
         self.activated= True
 
     def lap(self):
@@ -583,6 +624,13 @@ class TimerCtrl(Timer) :
             return self.now() - self.start_time
         else :
             return 0
+
+    def set_saveTime(self):
+        if self.activated :
+            self.save_time = self.now() 
+    
+    def get_saveTime(self):
+        return self.save_time 
 
     def stop(self):
         self.stop = self.now()
@@ -845,5 +893,5 @@ LIBRARY_SLOT = const(15)
 # -- LIBRARY MAIN ---
 Speaker.beep3()
 print("library loaded into robot slot:{}".format(LIBRARY_SLOT))
-hub.speaker.play_sound('charging')
+#hub.speaker.play_sound('charging')
 

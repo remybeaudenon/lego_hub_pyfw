@@ -56,7 +56,7 @@ while counter >= 0 :
 
     feedback = colorSensor.get_reflected_light()
     pid.update(feedback)
-    car.start_motors(int(pid.output))
+    car.start_motors(-int(pid.output))
 
     cap = mshub.motion_sensor.get_yaw_angle()
     if counter_step == 0 and  cap < 5 and cap > -5  :

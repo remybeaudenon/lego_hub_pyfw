@@ -7,11 +7,7 @@
     Date        : 08/2023
 """
 import hub, time
-from mindstorms.control import wait_for_seconds
 from micropython import const
-from mindstorms import MSHub
-import sys,util
-
 
 def import_from_slot(slot) :
     print("Library loading from slot:{}".format(slot))

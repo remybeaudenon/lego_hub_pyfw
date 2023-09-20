@@ -1,0 +1,94 @@
+
+import os 
+os.getcwd()
+'/'
+os.listdir() 
+['boot.py', 'bt-lk1.dat', 'bt-lk2.dat', 'main.py', 'projects', 'runtime', 
+'system', '_api', 'commands', 'event_loop', 'mindstorms', 
+'programrunner', 'protocol', 'sounds', 'spike', 'ui', 'util',
+ 'hub_runtime.mpy', 'version.py', 'extra_files', '.extra_files_hash', 
+ 'etc', '.runtime_hash', 'local_name.txt', 'runtime.log',
+  'cardguidage.py']
+
+>>> os.uname()
+(sysname='LEGO Technic Large Hub', nodename='LEGO Learning System Hub', 
+  release='1.14.0', version='v1.14-36-g377ea11 on 2022-11-01', 
+   machine='LEGO Technic Large Hub with STM32F413xx')
+
+>>> os.chdir('/projects')
+>>> os.listdir()
+['standalone_', 'standalone.mpy', '.slots', '40390', '1095', '43385', '62839', '21075', '4177', '52092',
+ '56070', '1777', '36205', '26676', '33685', '6760', '38181', '18406', '6669']
+>>> 
+
+
+>>> Micro python help('modules')
+__main__          micropython       ubluetooth        uos
+_onewire          uarray            ucollections      urandom
+_uasyncio         uasyncio/__init__ uctypes           ure
+builtins          uasyncio/core     uerrno            uselect
+cmath             uasyncio/event    uhashlib          ustruct
+firmware          uasyncio/funcs    uheapq            usys
+gc                uasyncio/lock     uio               utime
+hub               uasyncio/stream   ujson             utimeq
+math              ubinascii         umachine          uzlib
+
+>>> f = open('/projects/slots')
+>>> f.read()
+"{0: {'name': 'UHJvamV0IDE=', 'project_id': 'AkFX3z5titGV', 'modified': 1687673485558, 
+'created': 1687671193372, 'id': 40390, 'type': 'python'}, 
+ 1: {'name': 'c2xvdDAxX2Nhcmd1aWRhZ2U=', 'project_id': 'lTM-BfmMDg-9', 'modified': 1694147927423, 
+      'created': 1694147874721, 'id': 26676, 'type': 'python'}, 
+ 2: {'name': 'c2xvdDAyX2NhcmRlbW8gMg==', 'id': 62839, 'modified': 1693549553898, 'type': 'python', 
+        'project_id': '2y9D6VK5BNJ2', 'created': 1692687175224}, 
+ 3: {'name': 'c2xvdDAzX2Nhcmd1aWRhZ2U=', 'project_id': 'lTM-BfmMDg-9', 'modified': 1694151348018, 
+       'created': 1694147874721, 'id': 18406, 'type': 'python'}, 
+ 4: {'name': 'c2xvdDA0X3RyaWt5', 'project_id': 'ZwgRrcZw5ssi', 'modified': 1693843325015, 
+        'created': 1693831436710, 'id': 4177, 'type': 'python'}, 
+ 5: {'name': 'c2xvdDA1X1BJRA==', 'id': 36205, 'modified': 1694007672025, 'type': 'python', 
+            'project_id': 'ix_nJj62Lic1', 'created': 1693844682426}, 
+ 15: {'name': 'c2xvdDE1X2Jhc2VsaWI=', 'id': 38181, 'modified': 1694151023824, 'type': 'python',
+          'project_id': 'cY3tMZ5p5sw0', 'created': 1692681734573}, 
+ 16: {'name': 'c2xvdDE2X3BlcnNpdA==', 'id': 1095, 'modified': 1692686690497, 'type': 'python', 
+          'project_id': 'NK3qOkI_AEwt', 'created': 1692686048566}, 
+ 6: {'name': 'c2xvdDA2X3VzYmNtZA==', 'id': 6669, 'modified': 1694420713467, 'type': 'python', 
+            'project_id': 'fC5z2wqODEP9', 'created': 1694268134170}}"
+
+
+>>> open('/version.py').read()
+'""" GENERATED """\n__version__ = "3.2.36"\n'
+
+>>> os.listdir() /etc 
+['linkkeys', 'hostname', 'mems_calibration']
+>>> open('hostname').read()
+'LEGO Hub@IN13'
+
+>>> sys.implementation
+(name='micropython', version=(1, 14, 0), mpy=517)
+
+__ ROBOT 
+Number: 51515
+Title: Robot Inventor
+Theme: Mindstorms
+Released: 2020
+Part Count: 949
+Box Dimensions: 47,5 cm x 37,0 cm x 7,0 cm
+Box Weight: 2053 gram
+
+
+  >>> help(mindstorms)
+  MSHub -- <class 'MSHub'>
+  lightmatrix -- <module '_api.lightmatrix' from '_api/lightmatrix.mpy'>
+  motor -- <module '_api.motor' from '_api/motor.mpy'>
+  util -- <module '_api.util' from '_api/util.mpy'>
+  __file__ -- mindstorms/__init__.mpy
+  speaker -- <module '_api.speaker' from '_api/speaker.mpy'>
+  LightMatrix -- <class 'LightMatrix'>
+  Motor -- <class 'Motor'>
+  ForceSensor -- <class 'ForceSensor'>
+  app -- <module '_api.app' from '_api/app.mpy'>
+  button -- <module '_api.button' from '_api/button.mpy'>
+  distancesensor -- <module '_api.distancesensor' from '_api/distancesensor.mpy'>
+  __path__ -- mindstorms
+  motorpair -- <module '_api.motorpair' from '_api/motorpair.mpy'>
+  ColorSensor -- <class 'ColorSensor'>

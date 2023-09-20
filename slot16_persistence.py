@@ -1,22 +1,45 @@
 """
     DECANUM - Robot Inventor MicroPython Software -
     Project     : Framework for LEGO Robot Inventor MSHub
-                : Persistance library 
+                : Application Dummy sample 
     Application : slot16_persistence.py
-    
-    Libraires   : slot15, slot 16 
+    Libraries   : sloy15_baselib.py
     Auth        : remybeaudenon@yahoo.com
-    Date        : 06/2023
+    Date        : 08/2023
 """
-
-from mindstorms.control import wait_for_seconds,Timer
-from mindstorms import MSHub, Motor, MotorPair, DistanceSensor,ColorSensor
+import hub, time ,os
 from micropython import const
-import math,sys,urandom,time
-import os ,json,gc 
+from mindstorms import MSHub
 
-class LegoFw : 
-    __VERSION__ ='1.0.2-0822'
+def import_from_slot(slot) :
+    import sys,util
+    print("Library loading from slot:{}".format(slot))
+    hub.display.show( hub.Image("99999:90909:00000:00990:009900") )
+    if '/projects' not in sys.path :
+        sys.path.append('/projects')
+    # Now import the module
+    path = util.storage.get_path(slot) # './projects/40117'
+    names = path.split('/') # ['.','projects','40117']
+    name = names[-1] # '40117'
+    return __import__(name)
+
+# -- Libraries load  --
+LIBRARY_SLOT = const(15)
+Fw = import_from_slot(LIBRARY_SLOT)
+Fw.Speaker.play_sound('Hello')
+hub.light_matrix.off()
+
+# -- start Program --
+
+# ---------------------------------------------
+# ---------- Process Tasks loop ---------------
+# ---------------------------------------------
+
+#from mindstorms.control import wait_for_seconds,Timer
+#from mindstorms import MSHub, Motor, MotorPair, DistanceSensor,ColorSensor
+#from micropython import const
+#import math,sys,urandom,time
+#import os ,json,gc 
 
 class Persit :
 
@@ -29,13 +52,13 @@ class Persit :
     @staticmethod
     def cwd() :
         path = os.getcwd()
-        Log.trace("path : {}".format(path))
+        Fw.Log.trace("path : {}".format(path))
         return path
 
     @staticmethod
     def listdir(path) :
         alist = os.listdir(path)
-        Log.trace("list directory : {}".format(alist))
+        Fw.Log.trace("list directory : {}".format(alist))
         return alist
 
     @staticmethod
@@ -43,9 +66,9 @@ class Persit :
         rc = None
         try :
             rc = os.chdir(path)
-            Log.trace("Log.chdir() path: {} \trc:{}".format(path,rc))
+            Fw.Log.trace("Log.chdir() path: {} \trc:{}".format(path,rc))
         except Exception as e :
-            Log.trace("Log.chdir() path: {} Exception: {}".format(path,e))
+            Fw.Log.trace("Log.chdir() path: {} Exception: {}".format(path,e))
         return rc
 
     def file_exists(file):
@@ -61,15 +84,15 @@ class Persit :
         rc = None
         try :
             rc = os.mkdir(path)
-            Log.trace("Log.mkdir() path: {} \trc:{}".format(path,rc))
+            Fw.Log.trace("Log.mkdir() path: {} \trc:{}".format(path,rc))
         except Exception as e :
-            Log.trace("Log.mkdir() path: {} Exception: {}".format(path,e))
+            Fw.Log.trace("Log.mkdir() path: {} Exception: {}".format(path,e))
         return rc
 
     @staticmethod
     def rmdir(path) :
         rc = os.rmdir(path)
-        Log.trace("Log.rmdir() path: {} \trc:{}".format(path,rc))
+        Fw.Log.trace("Log.rmdir() path: {} \trc:{}".format(path,rc))
         return rc
 
 # ----Main Program----
