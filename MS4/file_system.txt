@@ -1,4 +1,11 @@
 
+
+### -- Fix 
+Sometimes, the MINDSTORMS Robot Inventor App keeps forcing firmware updates.
+https://dfu.pybricks.com/fix-update/
+
+
+
 import os 
 os.getcwd()
 '/'

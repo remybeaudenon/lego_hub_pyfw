@@ -1,6 +1,6 @@
 """
     DECANUM - Robot Inventor MicroPython Software -
-    Project    : Framework for LEGO Robot Inventor MSHub
+    Project    : Framework for LEGO Robot Inventor 51515
     Application: slot15_baselib.py
     Auth        : remybeaudenon@yahoo.com
     Date        : 06/2023
@@ -11,7 +11,7 @@ from micropython import const
 import math,sys,urandom,time,gc
 
 class LegoFw :
-    __VERSION__ ='1.0.3-0920'
+    __VERSION__ ='2.0.0-0927'
 
 class Log():
 
@@ -71,9 +71,9 @@ class Speaker() :
             hub.speaker.play_sound(name)
         else :
             hub.speaker.play_sound('Void')
-    def exit() : 
+    def exit() :
         hub.speaker.play_sound('Mission Accomplished')
-        raise Exception("Exit") 
+        raise Exception("Exit")
 
     @staticmethod
     def play_all():
@@ -402,19 +402,19 @@ class PID:
             u(t) = K_p e(t) + K_i \int_{0}^{t} e(t)dt + K_d {de}/{dt}
 
         .. figure:: images/pid_1.png
-           :align:   center
+        :align:center
 
-           Test PID with Kp=1.2, Ki=1, Kd=0.001 (test_pid.py)
+        Test PID with Kp=1.2, Ki=1, Kd=0.001 (test_pid.py)
 
         """
         error = self.SetPoint - feedback_value
-        
-        ####  Ticky add 
+
+        ####Ticky add
         if feedback_value == 0 :
-            error = 0 
+            error = 0
         elif feedback_value > self.setPoint :
-            error = 10 
-        else:      
+            error = 10
+        else:
             error = - 10
         ################################"
         # "
@@ -474,23 +474,19 @@ class PID:
 
 class Car(MotorPair):
 
-    AVANT= DROIT  = const(1)
-    ARRIERE = GAUCHE =const(-1)
+    AVANT= DROIT=1
+    ARRIERE = GAUCHE = -1
+    PERIMETRE_ROUE = 175 # mm
+    PUISSANCE_MINI = 25
+    PUISSANCE_MAXI = 75
+    RAMPE        = 200# 10 cm
 
-    PERIMETRE_ROUE = const(175) # mm
-
-    def __init__(self) :
-        MotorPair.__init__(self,PAIR_MOTORS_PORT[0],PAIR_MOTORS_PORT[1])
-        self.coder = Coder(PAIR_MOTORS_PORT[1])
-
-        self.set_default_speed(30)
-
-    def setSpeed(self,value):
-        if type(value) == int :
-            self.set_default_speed(self.scale(0,100,value))
+    def __init__(self, pair_motors_port) :
+        MotorPair.__init__(self,pair_motors_port[0],pair_motors_port[1])
+        self.coder = Coder(pair_motors_port[1])
 
     def start_motors(self,volant, speed = None):
-        self.start(self.scale(-100,100,volant), self.get_default_speed() if speed == None else speed)
+        self.start(self.scale(-100,100,volant), self.PUISSANCE_MINI if speed == None else speed)
 
     def move_cm(self, cm , sens):
         self.move_tank(cm * sens, "cm", 25, 25)
@@ -557,7 +553,7 @@ class Car(MotorPair):
             #if error <= -180: error = -(error + 180)
             control = kp * error
             power = int(math.copysign(power0,control)+control)
-            #print("error: {} control:{} power {} ".format(error , control,  power))
+            #print("error: {} control:{} power {} ".format(error , control,power))
             cont = math.fabs(error) > 2
             self.start_tank_at_power(power,-power)
         self.set_stop_action('brake')
@@ -567,7 +563,7 @@ class Car(MotorPair):
     def rotate(self,target):
         ntarget = (180+target) % 360 - 180 # normalize target to be in -180..+180 range
         Log.trace("Car:rotate() target= {} ntarget= {} ".format(target ,ntarget))
-        power = 35
+        power = self.PUISSANCE_MINI
         cont = True
         self.start_tank_at_power(power,-power)
         while cont:
@@ -579,6 +575,68 @@ class Car(MotorPair):
     def scale(self,mini,maxi,value) :
         return min(maxi , max(mini, value))
 
+class Tricky(Car) :
+
+    AVANT= DROIT= const(1)
+    ARRIERE = GAUCHE = const(-1)
+    PERIMETRE_ROUE = const(175) # mm
+    PAIR_MOTORS_PORT    = ('A','B')
+
+
+    PUISSANCE_MINI = const(25)
+    PUISSANCE_MAXI = const(75)
+    RAMPE        = const(200) # 10 cm
+    BREAK_ADVANCE=const(3)# coder Points
+
+    def __init__(self) :
+        Car.__init__(self,Tricky.PAIR_MOTORS_PORT)
+
+
+    def mv_to_tempo (self,params) :#Warning !!! No stop after elapsted time
+
+        p_drive= self.scale(-100,100,params[0])
+        p_speed= abs(params[1])
+        p_seconds = params[2]
+        self.start_motors(p_drive , p_speed )
+        time.sleep(p_seconds)
+
+    def gyro_to_angle(self,params) :    # PARAM ( ANGLE 'Yaw'  GYROSCOPIQUE,)
+    
+        p_angle= self.scale(0,359,params[0])
+        start_pos = self.coder.get_position()
+        self.rotate(p_angle)
+        self.coder.set_degrees_counted(start_pos)
+
+
+    def mv_to_point(self, params) :# PARAM ( DRIVE,SPEED,POINTS )
+        p_drive= self.scale(-100,100,params[0])
+        p_speed= abs(params[1])
+        p_points = params[2]
+        start_pos = self.coder.get_position()
+        distance_points = p_points - start_pos
+
+        while ( distance_points >= 0 and self.coder.get_position() < ( p_points - self.BREAK_ADVANCE) ) or \
+            ( distance_points< 0 and self.coder.get_position() > ( p_points + self.BREAK_ADVANCE) ) :
+
+            position = self.coder.get_position()
+            points_restant = abs(p_points - position)                                # 1cm --> 20 points
+            if points_restant <= self.RAMPE :                                    # speed deceleration ramp activation.
+                speed = max( self.PUISSANCE_MINI , round(points_restant / 5 ))
+
+            elif abs(position - start_pos) < self.RAMPE :                        # speed acceleration ramp activation.
+                speed = max( self.PUISSANCE_MINI, round(abs(position - start_pos ) / 5) )
+            else :
+                speed = p_speed                                                    # speed default param
+
+            if speed > p_speed : speed = p_speed                            # check keep limitation
+            if distance_points < 0 : speed = - speed                        # Foward/Reverse motor setter
+
+            #Log.trace("Tricky:mv_to_point() DEBUG start_pos:{:7d} points_distance:{:04d} points_restant:{:04d} speed:{:03d} "\
+            #                .format( start_pos,distance_points,points_restant,speed))
+
+            self.start_motors( p_drive , speed )
+        self.stop()
+
 
 class MotorAux(Coder) :
 
@@ -587,7 +645,7 @@ class MotorAux(Coder) :
     def __init__(self, motor_port , reverse = False ) :
         super().__init__(motor_port)
         self.motor_port = motor_port
-        self.reverse = reverse 
+        self.reverse = reverse
         self.set_default_speed(20)
 
     def init(self) :
@@ -597,13 +655,13 @@ class MotorAux(Coder) :
 
         angle = self.scale(0,150,angle)
         if self.reverse :
-             angle = 360 - angle 
+            angle = 360 - angle
 
         self.run_to_position( angle , 'shortest path')
 
     def scale(self,mini,maxi,value) :
         return min(maxi , max(mini, value))
-    
+
 
 class TimerCtrl(Timer) :
 
@@ -627,14 +685,19 @@ class TimerCtrl(Timer) :
 
     def set_saveTime(self):
         if self.activated :
-            self.save_time = self.now() 
-    
+            self.save_time = self.now()
+
     def get_saveTime(self):
-        return self.save_time 
+        return self.save_time
 
     def stop(self):
         self.stop = self.now()
         self.activated = False
+
+    def wait_sec(self, seconds):
+        self.set_saveTime()
+        while self.lap() <= self.get_saveTime() + seconds:
+            pass
 
     def wait_y(self,sec):
         while self.now() < sec :
@@ -803,11 +866,10 @@ class MenuCtrl() :
     def isMenuItem(self,menu_item):
         return menu_item in self.item_list
 
-
 class Select() :
 
-    PARAMS_SPEED = {'mini':25 ,'maxi':95 ,'increment':5 ,'init' : 50 ,'matrix_code':'55599:55995:99555:55995:55599'}
-    PARAMS_PROG_NUM = {'mini':1 ,'maxi':20 ,'increment':1 ,'init' : 0, 'matrix_code':'55555:99999:55959:55999:55555'}
+    _PARAMS_SPEED = {'mini':25 ,'maxi':95 ,'increment':5 ,'init' : 50 ,'matrix_code':'55599:55995:99555:55995:55599'}
+    _PARAMS_PROG_NUM = {'mini':1 ,'maxi':20 ,'increment':1 ,'init' : 0, 'matrix_code':'55555:99999:55959:55999:55555'}
 
     def __init__(self, params) :
         self.left    = hub.left_button.was_pressed()
@@ -881,17 +943,16 @@ Log.trace('Main:Thread() Welcome to Discovery Hub os:{} car version:{} fw:{}'. \
 # -- Sensors port---
 PAIR_MOTORS_PORT    = ('A','B')
 RADAR_MOTOR_PORT    = 'C'
-COLOR_SENSOR_PORT= 'E'
-RADAR_SENSOR_PORT= 'F'
-MANETTE_MOTOR_PORT= 'D'
+COLOR_SENSOR_PORT   = 'E'
+RADAR_SENSOR_PORT   = 'F'
+MANETTE_MOTOR_PORT  = 'D'
 
 # -- global instance ---
 hub    = MSHub()
-LIBRARY_SLOT = const(15) 
+LIBRARY_SLOT = const(15)
 
 
 # -- LIBRARY MAIN ---
 Speaker.beep3()
 print("library loaded into robot slot:{}".format(LIBRARY_SLOT))
 #hub.speaker.play_sound('charging')
-
